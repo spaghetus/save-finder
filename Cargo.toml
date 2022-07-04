@@ -1,0 +1,15 @@
+[package]
+name = "save-finder"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+steamlocate = "*"
+structopt = "*"
+include_dir = "*"
+reqwest = { version = "*", features = ["blocking"] }
+pyo3 = { version = "*", features = ["auto-initialize"] }
+walkdir = "*"
+anyhow = "*"
