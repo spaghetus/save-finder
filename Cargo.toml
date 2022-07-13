@@ -9,7 +9,7 @@ edition = "2021"
 steamlocate = "*"
 structopt = "*"
 include_dir = "*"
-reqwest = { version = "*", features = ["blocking"] }
+reqwest = { version = "*", features = ["blocking", "rustls"] }
 pyo3 = { version = "*", features = ["auto-initialize"] }
 walkdir = "*"
 anyhow = "*"
