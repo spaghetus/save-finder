@@ -1,10 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{
+	collections::{HashMap},
+	path::PathBuf,
+	str::FromStr,
+};
 
 use include_dir::{include_dir, Dir};
-use pyo3::{
-	types::{PyDict, PyModule},
-	PyResult, Python,
-};
+use pyo3::{types::PyModule, PyResult, Python};
 use steamlocate::SteamDir;
 use walkdir::WalkDir;
 
@@ -25,14 +26,18 @@ impl SaveFinder {
 		}
 	}
 
-	pub fn find_games(&mut self) {
+	pub fn find_games(&mut self, cache: &mut ApplicabilityCache) {
 		let mut dirs = SteamDir::locate().unwrap();
 		let apps = dirs
 			.apps()
 			.iter()
-			.flat_map(|(a, b)| b)
+			.flat_map(|(_a, b)| b)
 			.filter(|a| {
 				let id = a.appid;
+				if let Some(applicable) = cache.games.get(&id) {
+					eprintln!("{}: {} (CACHED)", id, applicable);
+					return *applicable;
+				}
 				let store_page =
 					reqwest::blocking::get(format!("https://store.steampowered.com/app/{}", id))
 						.map(|v| v.text().unwrap())
@@ -40,6 +45,7 @@ impl SaveFinder {
 				// If the store page contains steam cloud, we don't need to back it up
 				let applicable = !store_page.contains(&"Steam Cloud".to_string());
 				eprintln!("{}: {}", id, applicable);
+				cache.games.insert(id, applicable);
 				applicable
 			})
 			.map(|v| v.path.clone())
@@ -60,11 +66,11 @@ impl SaveFinder {
 			.map(|(game_path, game_name)| -> anyhow::Result<_> {
 				let locator = LOCATORS
 					.get_file(format!("{}.py", game_name))
-					.unwrap_or(LOCATORS.get_file("Default.py").unwrap())
+					.unwrap_or_else(|| LOCATORS.get_file("Default.py").unwrap())
 					.contents_utf8()
 					.unwrap();
 				let save_path = Python::with_gil(|py| -> PyResult<String> {
-					let module = PyModule::from_code(py, &locator, "locator.py", "Locator")?;
+					let module = PyModule::from_code(py, locator, "locator.py", "Locator")?;
 					Ok(module
 						.call_method("locator", (game_path.to_str().unwrap(),), None)?
 						.to_string())
@@ -95,15 +101,15 @@ impl SaveFinder {
 				})
 				.flatten()
 			{
-				let result: anyhow::Result<()> = (|| {
+				let _result: anyhow::Result<()> = (|| {
 					let file_path = file.path();
 					let rel_path = file_path
 						.strip_prefix(game_path.clone())
-						.unwrap_or(&file_path);
+						.unwrap_or(file_path);
 					let from_path = game_path.join(&rel_path);
 					let to_path = self
 						.out_dir
-						.join(PathBuf::from_str(&game_name)?)
+						.join(PathBuf::from_str(game_name)?)
 						.join(&rel_path);
 					let dir = to_path.ancestors().next().unwrap();
 					std::fs::create_dir_all(dir)?;
@@ -112,5 +118,26 @@ impl SaveFinder {
 				})();
 			}
 		}
+	}
+}
+
+// A map that caches whether a given game supports cloud saves.
+// Stored ondisk in your xdg cache directory.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+pub struct ApplicabilityCache {
+	pub games: HashMap<u32, bool>,
+}
+
+impl ApplicabilityCache {
+	pub fn load() -> ApplicabilityCache {
+		let src_dir = dirs::cache_dir().unwrap_or_else(|| PathBuf::from_str("/tmp/").unwrap());
+		let src_file = src_dir.join("save_finder_cache.json");
+		serde_json::from_slice(&std::fs::read(src_file).unwrap_or_default()).unwrap_or_default()
+	}
+	pub fn put(&self) {
+		let src_dir = dirs::cache_dir().unwrap_or_else(|| PathBuf::from_str("/tmp/").unwrap());
+		let src_file = src_dir.join("save_finder_cache.json");
+		let out = serde_json::to_string_pretty(self).unwrap();
+		std::fs::write(src_file, out).unwrap();
 	}
 }

@@ -13,3 +13,7 @@ reqwest = { version = "*", features = ["blocking"] }
 pyo3 = { version = "*", features = ["auto-initialize"] }
 walkdir = "*"
 anyhow = "*"
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+dirs = "*"
+eframe = { version = "*", optional = true }
